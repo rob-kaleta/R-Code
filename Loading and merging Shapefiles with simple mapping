@@ -5,17 +5,22 @@
 ### Install the packages required
 install.packages("data.table")
 install.packages("lwgeom")
+install.packages("readxl")
 install.packages("sf")
 install.packages("tmap")
 
 ### Load packages required
 require("data.table")
 require("lwgeom")
+require("readxl")
 require("sf")
 require("tmap")
 
 ### Set working directory
 setwd("...")
+
+### Load data from Excel sheet
+Excel_Sheet <- data.table(read_excel("FILE_NAME.xlsx", sheet = "SHEET_NAME"))
 
 ### Load the 2017 Clinical Commissioning Groups boundaries for England (Super Generalised Clipped version)
 ### The Shapefile can be downloaded from: http://geoportal.statistics.gov.uk/datasets/clinical-commissioning-groups-april-2017-super-generalised-clipped-boundaries-in-england-v4
