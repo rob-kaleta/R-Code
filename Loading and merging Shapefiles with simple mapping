@@ -1,0 +1,94 @@
+##############################################################
+### R - Loading and merging Shapefiles with simple mapping ###
+##############################################################
+
+### Install the packages required
+install.packages("data.table")
+install.packages("lwgeom")
+install.packages("sf")
+install.packages("tmap")
+
+### Load packages required
+require("data.table")
+require("lwgeom")
+require("sf")
+require("tmap")
+
+### Set working directory
+setwd("...")
+
+### Load the 2017 Clinical Commissioning Groups boundaries for England (Super Generalised Clipped version)
+### The Shapefile can be downloaded from: http://geoportal.statistics.gov.uk/datasets/clinical-commissioning-groups-april-2017-super-generalised-clipped-boundaries-in-england-v4
+CCG_Eng_Boundaries <- st_read("Clinical_Commissioning_Groups_April_2017_Super_Generalised_Clipped_Boundaries_in_England_V4.shp")
+
+### Load the 2017 Local Authority District boundaries for Great Britain (Super Generalised Clipped version)
+### The Shapefile can be downloaded from: http://geoportal.statistics.gov.uk/datasets/local-authority-districts-december-2017-super-generalised-clipped-boundaries-in-great-britain
+LAD_GB_Boundaries <- st_read("Local_Authority_Districts_December_2017_Super_Generalised_Clipped_Boundaries_in_Great_Britain.shp")
+
+### Load the 2012 Local Authority District boundaries for Northern Ireland
+### The Shapefile can be downloaded from: https://www.opendatani.gov.uk/dataset/osni-open-data-largescale-boundaries-local-government-districts-20121/resource/1625654d-e7e7-4098-9bd0-0c2a29a19a89
+LAD_NI_Boundaries <- st_read("OSNI_Open_Data_Largescale_Boundaries__Local_Government_Districts_2012.shp")
+
+### Plot the geometry of the Northern Ireland 2012 Local Authority District boundaries 
+plot(st_geometry(LAD_NI_Boundaries))
+
+### Re-project the Northern Ireland 2012 Local Authority District boundaries to British National Grid
+LAD_NI_Boundaries_BNG <- st_transform_proj(LAD_NI_Boundaries, crs="+init=epsg:27700 +proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +datum=OSGB36 +units=m +no_defs +ellps=airy +towgs84=446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894")
+
+### Re-project the Great Britain 2017 Local Authority District boundaries to the same British National Grid projection as applied to the Northern Ireland boundaries
+LAD_GB_Boundaries_BNG <- st_transform_proj(LAD_GB_Boundaries, crs="+init=epsg:27700 +proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +datum=OSGB36 +units=m +no_defs +ellps=airy +towgs84=446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894")
+
+### Merge the Great Britain and Northern Ireland boundaries together to make a UK boundary file
+LAD_UK_Boundaries_BNG <- rbindlist(list(LAD_GB_Boundaries_BNG, LAD_NI_Boundaries_BNG), fill=T)
+
+### Create a new ID colum 'GeogCode' taking the codes from 'lad17cd' from the Great Britain boundaries and 'LDGCode' from the Northern Ireland boundaries
+LAD_UK_Boundaries_BNG <- st_sf(LAD_UK_Boundaries_BNG[, GeogCode := LGDCode][is.na(LGDCode), GeogCode := lad17cd][])
+
+### Plot the geometry of the combined UK Local Authority District boundaries 
+plot(st_geometry(LAD_UK_Boundaries_BNG))
+
+### Add some dummy data to the UK boundary set to test some mapping techniques
+LAD_UK_Boundaries_BNG[,"Percent"] <- sample(100, size = nrow(LAD_UK_Boundaries_BNG), replace = TRUE)
+LAD_UK_Boundaries_BNG[,"PCT"] <- sample(100, size = nrow(LAD_UK_Boundaries_BNG), replace = TRUE)
+
+### Use the 'tmap' package and 'qtm' function to draw a simple choropleth map of the dummy 'Percent' attribute
+qtm(LAD_UK_Boundaries_BNG, fill = "Percent")
+
+### Use the 'tmap' package and 'qtm' function to draw simple choropleth maps of the dummy 'Percent' and 'PCT' attributes
+qtm(LAD_UK_Boundaries_BNG, fill = c("Percent", "PCT"))
+
+### Use the 'tmap' package to create a more advanced choropleth map of the dummy 'Percent' attribute using the 'Jenks Natural Breaks' classification for creating the 5 specified classes
+Map_Plot_Classes <- tm_shape(LAD_UK_Boundaries_BNG) + tm_fill("Percent", palette = "Reds", style = "jenks", title = "Random Percents", n = 5) + tm_borders(alpha=.4) 
+
+### Plot the choropleth map
+Map_Plot_Classes
+
+### Use the 'tmap' package to create a more advanced choropleth map of the dummy 'PCT' attribute using a continuous scale
+### Note: a continuous scale should not be used if the data being mapped belong to well defined boundaries. For more information see http://wiki.gis.com/wiki/index.php/Discrete_and_Continuous_Data
+Map_Plot_Continuous <- tm_shape(LAD_UK_Boundaries_BNG) + tm_fill("PCT", palette = "Reds", style = "cont", title = "Random Percents") + tm_borders(alpha=.4) 			  
+
+### Plot the choropleth map
+Map_Plot_Continuous
+
+### Set the tmap mapping mode to 'plot' (this means the maps will draw inside R)
+tmap_mode("plot")
+
+### Create two different choropleth map objects. The first uses 'Jenks Natural Breaks' to create the classes and the second uses 'Quantile' to create them
+Map_Plot_1 <- tm_shape(LAD_UK_Boundaries_BNG) + tm_fill("Percent", palette = "YlOrRd", style = "jenks", title = "Jenks") + tm_borders(alpha=.4) 
+Map_Plot_2 <- tm_shape(LAD_UK_Boundaries_BNG) + tm_fill("Percent", palette = "YlOrRd", style = "quantile", title = "Quantile") + tm_borders(alpha=.4) 
+
+### Plot the two choropleth maps side-by-side to see how different ways of classifying the data leads to different visual results
+tmap_arrange(Map_Plot_1, Map_Plot_2)
+
+### Set the tmap mapping mode to 'view' (this means the maps will be plotted in an interactive internet browser window)
+tmap_mode("view")
+
+### Plot two maps side-by-side in an interactive internet browser window
+tm_shape(LAD_UK_Boundaries_BNG) + tm_polygons(c("Percent", "PCT")) + tm_facets(sync = TRUE, ncol = 2)
+
+### Plot a leaflet widget map in an interactive internet browser window
+tmap_leaflet(Map_Plot_Classes)
+	
+###########
+### END ###
+###########	
