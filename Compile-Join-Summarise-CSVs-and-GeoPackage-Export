@@ -1,0 +1,88 @@
+#################################################################################################
+### R - Compile CSV files, join to ONSPD, produce summary statistics and output as GeoPackage ###
+#################################################################################################
+
+### Install packages
+install.packages("data.table")
+install.packages("dplyr")
+install.packages("lwgeom")
+install.packages("sf")
+install.packages("stringr")
+
+### Load packages
+require("data.table")
+require("dplyr")
+require("lwgeom")
+require("sf")
+require("stringr")
+
+### Set working directory
+setwd("...")
+
+### Identify all the 'certificate' CSV files in the sub-directories of the working directory and load them as a single dataset
+Certificate_CSV_List <- list.files(path = ".", recursive=T, pattern = "*certificates.csv", full.names = T)
+Certificate_Data <- rbindlist(lapply(Certificate_CSV_List, fread, sep=","), fill = TRUE)
+
+### Load the latest version of the ONSPD. Note: While downloading possible, it is quicker to download file and load a local version
+### ONSPD <- fread("http://geoportal.statistics.gov.uk/datasets/75edec484c5d49bcadd4893c0ebca0ff_0.csv")
+ONSPD <- fread("ONS_Postcode_Directory_Latest_Centroids.csv", header=TRUE)
+
+### Standardise the column headers so they are all upper case and spaces are replaced with underscores
+names(Certificate_Data) %<>% stringr::str_replace_all("\\s","_") %>% toupper
+names(ONSPD) %<>% stringr::str_replace_all("\\s","_") %>% toupper
+
+### Create new postcode field 'PCD_JOIN' in 'ONSPD' with all spaces removed
+ONSPD[, PCD_JOIN := str_replace_all(string=ONSPD$PCD,pattern=" ", repl="")]  
+
+### Create new postcode field 'PCD_JOIN' in 'Certificate_Data' with all spaces removed
+Certificate_Data[, PCD_JOIN := str_replace_all(string=Certificate_Data$POSTCODE,pattern=" ", repl="")]  
+
+### Remove columns with geographic codes and names from 'Certificate_Data'
+Certificate_Data[, c("LOCAL_AUTHORITY","CONSTITUENCY","COUNTY","LOCAL_AUTHORITY_LABEL","CONSTITUENCY_LABEL"):=NULL] 
+
+### Set the keys in the 'Certificate_Data' and 'ONSPD' datasets that will be used to merge them
+setkey(Certificate_Data, PCD_JOIN)
+setkey(ONSPD, PCD_JOIN)
+
+### Number of records in 'Certificate_Data' that can not be joined because the postcode is not in the ONSPD
+nrow(Certificate_Data[!PCD_JOIN %in% ONSPD$PCD_JOIN])
+
+### Append selected columns from 'ONSPD' to 'Certificate_Data' when there is a matching 'PCD_JOIN' in both datasets
+Certificate_Data <- Certificate_Data[ONSPD[,c("PCD_JOIN","WZ11","OSLAUA","OSEAST1M", "OSNRTH1M")],nomatch=0]
+
+### Aggregate the total number of non-domestic addresses and most common property type by Postcode
+Certificate_Data_Postcode_Aggregation <- Certificate_Data %>% group_by(PCD_JOIN) %>% summarise(
+    Total_Non_Domestic_Addresses = length(PCD_JOIN),
+	Most_Common_Property_Type = names(which(table(PROPERTY_TYPE) == max(table(PROPERTY_TYPE)))[1]))
+
+### Aggregate the total number of non-domestic addresses and most common property type by Workplace Zone	
+Certificate_Data_WZ_Aggregation <- Certificate_Data %>% group_by(WZ11) %>% summarise(
+    Total_Non_Domestic_Addresses = length(WZ11),
+	Most_Common_Property_Type = names(which(table(PROPERTY_TYPE) == max(table(PROPERTY_TYPE)))[1]))
+
+### Aggregate the total number of non-domestic addresses and most common property type by Local Authority District
+Certificate_Data_LAD_Aggregation <- Certificate_Data %>% group_by(OSLAUA) %>% summarise(
+    Total_Non_Domestic_Addresses = length(OSLAUA),
+	Most_Common_Property_Type = names(which(table(PROPERTY_TYPE) == max(table(PROPERTY_TYPE)))[1]))
+
+### Records with coordinates missing
+nrow(Certificate_Data[!complete.cases(Certificate_Data[, c("OSEAST1M","OSNRTH1M")])])
+
+### Remove any records that do not contain a grid reference
+Certificate_Data <- Certificate_Data[complete.cases(Certificate_Data[, c("OSEAST1M","OSNRTH1M")])]
+
+### Create a spatial dataset using "OSEAST1M" and "OSNRTH1M" as the grid references on the British National Grid (CRS 27700)
+Certificate_Data_Points <- st_as_sf(Certificate_Data, coords = c("OSEAST1M","OSNRTH1M"),crs=27700)
+
+### Re-project the spatial dataset so all projection attributes are retained in the GeoPackage output
+Certificate_Data_Points <- st_transform_proj(Certificate_Data_Points, crs="+init=epsg:27700 +proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +datum=OSGB36 +units=m +no_defs +ellps=airy +towgs84=446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894")
+
+### Export the data as a CSV file
+fwrite(Certificate_Data,"Energy_Performance_Certificate_Data.csv", col.names=T, row.names=F, sep=",")
+
+### Export the data as a GeoPackage
+st_write(Certificate_Data_Points, "Energy_Performance_Certificate_Data.gpkg", "Energy_Performance_Certificate_Data")	
+
+###########
+### End ###
+###########
