@@ -61,6 +61,8 @@ Polygon_GEOJSON_BNG <- st_transform_proj(Polygon_GEOJSON, crs="+init=epsg:27700 
 ### EXPORT DATA ###
 ###################
 
+### Testing push/pull ###
+
 ### Export multiple layers as a single GeoPackge
 ### Note: The 'Output_File_Name' needs to be the same for each file
 st_write(Polygon_SHP_BNG, "C:/FolderLocation/Output_File_Name.gpkg", "Polygon_that_was_previously_a_Shapefile_BNG")
